@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>馬纓丹 ONLINE - 總司令控制台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{neon:{cyan:'#0ff',pink:'#f0f',yellow:'#ff0',green:'#0f0',red:'#ff003c',bg:'#050b14'}}}}}</script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="config.js"></script>
+    <style>
+        body { background-color: #050b14; color: #e5e7eb; font-family: sans-serif; }
+        .scanline { background: linear-gradient(to bottom, transparent 50%, rgba(0, 255, 255, 0.1) 51%); background-size: 100% 4px; animation: scan 10s linear infinite; pointer-events: none; }
+        @keyframes scan { 0% { background-position: 0 0; } 100% { background-position: 0 100vh; } }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #111; } ::-webkit-scrollbar-thumb { background: #0ff; }
+        .tab-active { border-bottom: 2px solid #0ff; color: #0ff; text-shadow: 0 0 10px #0ff; }
+        .cyber-box-red { border: 1px solid #ff003c; box-shadow: inset 0 0 15px rgba(255,0,60,0.1); }
+    </style>
+</head>
+<body class="relative min-h-screen p-4 md:p-8">
+    <div class="fixed inset-0 scanline z-0"></div>
+
+    <div id="app" class="relative z-10 max-w-6xl mx-auto bg-black/80 border border-gray-800 p-6 md:p-8 shadow-[0_0_30px_rgba(0,255,255,0.1)]">
+        
+        <div class="flex justify-between items-end mb-8 border-b border-cyan-900 pb-4">
+            <div>
+                <h1 class="text-4xl font-black text-white tracking-widest drop-shadow-[0_0_10px_#0ff]">教師指揮中心 <span class="text-neon-cyan text-xl">v2.66</span></h1>
+                <p class="text-gray-400 font-bold mt-2 text-sm tracking-widest">>> 系統與測驗即時控制面板</p>
+            </div>
+            <div class="text-right bg-gray-900/50 border border-yellow-700/50 p-3 shadow-[0_0_15px_rgba(255,255,0,0.1)]">
+                <div class="text-xs text-neon-yellow tracking-widest font-bold mb-1">歷史累積造訪人次</div>
+                <div class="text-3xl font-black text-neon-yellow font-mono drop-shadow-[0_0_10px_#ff0]">{{ visitorCount }}</div>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 md:gap-6 mb-8 border-b border-gray-800 pb-2 font-bold tracking-widest text-sm md:text-base">
+            <button @click="tab = 'system'" class="px-4 py-2 transition" :class="tab === 'system' ? 'tab-active' : 'text-gray-500 hover:text-gray-300'">⚙️ 系統開關</button>
+            <button @click="tab = 'highlight'" class="px-4 py-2 transition" :class="tab === 'highlight' ? 'tab-active' : 'text-gray-500 hover:text-gray-300'">✨ 矩陣發光</button>
+            <button @click="tab = 'quiz'" class="px-4 py-2 transition relative" :class="tab === 'quiz' ? 'tab-active' : 'text-gray-500 hover:text-gray-300'">
+                📝 隨堂小考 & 審核
+                <span v-if="pendingList.length > 0" class="absolute -top-1 -right-2 bg-neon-red text-white text-[10px] px-1.5 py-0.5 rounded-full animate-bounce">{{ pendingList.length }}</span>
+            </button>
+            <button @click="tab = 'log'; fetchLogs(false);" class="px-4 py-2 transition" :class="tab === 'log' ? 'tab-active' : 'text-gray-500 hover:text-gray-300'">📊 活動紀錄</button>
+        </div>
+
+        <div v-if="tab === 'system'" class="grid grid-cols-1 md:grid-cols-2 gap-8 fade-in">
+            
+            <div class="col-span-1 md:col-span-2 border border-neon-red bg-red-950/30 p-6 relative overflow-hidden shadow-[0_0_20px_rgba(255,0,60,0.1)]">
+                <div class="absolute inset-0 scanline opacity-20 pointer-events-none"></div>
+                <h2 class="text-xl font-black text-neon-red mb-4 border-b border-red-900 pb-2 relative z-10 flex items-center gap-2">⚡ 全服即時強制廣播 (無視模式，直接彈出)</h2>
+                <div class="flex flex-col md:flex-row gap-4 relative z-10">
+                    <input type="text" v-model="realtimeMsgInput" @keyup.enter="sendRealtimeMsg" placeholder="輸入緊急通知... (例如：剩下 3 分鐘，請回到大廳準備小考！)" class="flex-1 bg-black border border-red-700 text-white p-4 font-bold focus:border-neon-red focus:shadow-[0_0_15px_#f00] outline-none tracking-widest text-lg transition-all">
+                    <button @click="sendRealtimeMsg" :disabled="!realtimeMsgInput.trim()" class="bg-neon-red text-white hover:bg-red-600 font-black px-10 py-4 tracking-widest shadow-[0_0_15px_#f00] transition disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap text-lg">🚨 立即發送</button>
+                </div>
+            </div>
+
+            <div class="border border-gray-700 bg-gray-900/50 p-6">
+                <h2 class="text-xl font-bold text-neon-cyan mb-4 border-b border-gray-700 pb-2">🕹️ 系統模式開關</h2>
+                <div class="space-y-4">
+                    <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="settings.modes.flashcard" class="w-5 h-5 accent-cyan-500"><span class="font-bold text-gray-200">📇 單字卡模式</span></label>
+                    <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="settings.modes.quiz" class="w-5 h-5 accent-cyan-500"><span class="font-bold text-gray-200">🎯 自我考驗模式</span></label>
+                    <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="settings.modes.blindTest" class="w-5 h-5 accent-cyan-500"><span class="font-bold text-gray-200">🧠 字義盲測模式</span></label>
+                    <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="settings.modes.battle" class="w-5 h-5 accent-cyan-500"><span class="font-bold text-gray-200">⚔️ 雙人死鬥 PVP</span></label>
+                    <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="settings.modes.liveQuiz" class="w-5 h-5 accent-cyan-500"><span class="font-bold text-gray-200">📝 隨堂小考入口</span></label>
+                </div>
+                <button @click="saveSystemSettings" class="mt-6 bg-cyan-800 text-white hover:bg-cyan-600 font-bold py-3 w-full transition tracking-widest">💾 儲存模式開關</button>
+            </div>
+
+            <div class="border border-gray-700 bg-gray-900/50 p-6">
+                <h2 class="text-xl font-bold text-neon-cyan mb-4 border-b border-gray-700 pb-2">📢 登入跑馬燈公告</h2>
+                <textarea v-model="settings.announcement.text" rows="4" class="w-full bg-black border border-gray-600 p-3 text-white focus:border-neon-cyan focus:outline-none mb-4" placeholder="輸入要顯示在大廳上方的跑馬燈內容..."></textarea>
+                <label class="flex items-center gap-3 cursor-pointer mb-4"><input type="checkbox" v-model="settings.announcement.isEnabled" class="w-5 h-5 accent-cyan-500"><span class="font-bold text-gray-200">顯示大廳跑馬燈</span></label>
+                <button @click="sendAnnouncement" class="bg-neon-cyan text-black hover:bg-cyan-400 font-black py-3 w-full transition tracking-widest shadow-[0_0_15px_rgba(0,255,255,0.4)]">💾 儲存跑馬燈設定</button>
+            </div>
+        </div>
+
+        <div v-if="tab === 'highlight'" class="fade-in">
+            <div class="bg-gray-900/80 border border-gray-700 p-4 md:p-6 mb-6">
+                <h3 class="text-neon-cyan font-bold mb-3 tracking-widest">📍 大廳主畫面「模式按鈕」發光控制</h3>
+                <div class="flex flex-wrap gap-6 border border-gray-800 bg-black p-4">
+                    <label class="flex items-center gap-2 cursor-pointer font-bold"><input type="checkbox" v-model="highlights.modes.flashcard" class="w-5 h-5 accent-cyan-500"> 📇 單字卡</label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold"><input type="checkbox" v-model="highlights.modes.quiz" class="w-5 h-5 accent-green-500"> 🎯 自我考驗</label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold"><input type="checkbox" v-model="highlights.modes.blindTest" class="w-5 h-5 accent-yellow-500"> 🧠 字義盲測</label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold"><input type="checkbox" v-model="highlights.modes.battle" class="w-5 h-5 accent-red-500"> ⚔️ 雙人死鬥</label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold"><input type="checkbox" v-model="highlights.modes.liveQuiz" class="w-5 h-5 accent-white"> 📝 隨堂小考</label>
+                </div>
+            </div>
+
+            <div class="bg-gray-900/80 border border-gray-700 p-4 md:p-6 relative">
+                <h3 class="text-neon-cyan font-bold mb-3 tracking-widest">📍 各模式內「單字主題」發光控制</h3>
+                <div class="overflow-x-auto cyber-scrollbar">
+                    <table class="w-full text-left border-collapse border border-gray-700 min-w-[600px]">
+                        <thead>
+                            <tr class="bg-gray-800 text-gray-300 tracking-widest">
+                                <th class="p-3 border border-gray-700 text-white">單字主題名稱</th>
+                                <th class="p-3 border border-gray-700 text-center text-cyan-400">📇 單字卡</th>
+                                <th class="p-3 border border-gray-700 text-center text-green-400">🎯 自我考驗</th>
+                                <th class="p-3 border border-gray-700 text-center text-yellow-400">🧠 字義盲測</th>
+                                <th class="p-3 border border-gray-700 text-center text-red-400">⚔️ 雙人死鬥</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="bg-red-950/30 hover:bg-red-900/50 transition">
+                                <td class="p-3 border border-gray-700 font-black text-neon-red tracking-widest">😈 🔥 2000單大魔王</td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['flashcard_boss']" class="w-6 h-6 accent-cyan-500 cursor-pointer"></td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['quiz_boss']" class="w-6 h-6 accent-green-500 cursor-pointer"></td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['blindTest_boss']" class="w-6 h-6 accent-yellow-500 cursor-pointer"></td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['battle_boss']" class="w-6 h-6 accent-red-500 cursor-pointer"></td>
+                            </tr>
+                            <tr v-for="t in themes" :key="t.name" class="hover:bg-gray-800 transition">
+                                <td class="p-3 border border-gray-700 font-bold text-gray-200">{{ t.name }}</td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['flashcard_' + t.name]" class="w-5 h-5 accent-cyan-500 cursor-pointer"></td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['quiz_' + t.name]" class="w-5 h-5 accent-green-500 cursor-pointer"></td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['blindTest_' + t.name]" class="w-5 h-5 accent-yellow-500 cursor-pointer"></td>
+                                <td class="p-3 border border-gray-700 text-center"><input type="checkbox" v-model="highlights.themes['battle_' + t.name]" class="w-5 h-5 accent-red-500 cursor-pointer"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="sticky bottom-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6 mt-6 p-4 bg-black/95 border-t-2 border-neon-cyan z-50 shadow-[0_-15px_30px_rgba(0,0,0,0.8)] backdrop-blur-sm">
+                    <button @click="saveHighlights" class="bg-neon-cyan text-black hover:bg-cyan-400 font-black text-xl py-4 w-full transition tracking-widest shadow-[0_0_20px_rgba(0,255,255,0.5)] border border-transparent hover:border-white">
+                        💾 儲存並同步更新全伺服器發光設定
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="tab === 'quiz'" class="fade-in flex flex-col gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="border border-gray-700 bg-gray-900/50 p-6 flex flex-col">
+                    <h2 class="text-xl font-bold text-neon-cyan mb-4 border-b border-gray-700 pb-2">📝 派發隨堂小考</h2>
+                    <h3 class="text-sm font-bold text-gray-400 tracking-widest mb-2">1. 選擇測驗範圍 (可複選)</h3>
+                    <div class="max-h-40 overflow-y-auto cyber-scrollbar border border-gray-600 bg-black p-3 mb-4 space-y-3">
+                        <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="liveQuizConfig.themes" value="🔥 2000單大魔王" class="w-5 h-5 accent-red-500"> <span class="text-neon-red font-black tracking-widest">😈 2000單大魔王 (全範圍混題)</span></label>
+                        <div class="border-t border-gray-800 my-1"></div>
+                        <label v-for="t in themes" class="flex items-center gap-3 cursor-pointer"><input type="checkbox" v-model="liveQuizConfig.themes" :value="t.name" class="w-5 h-5 accent-green-500"> <span class="text-gray-200 font-bold">{{ t.name }}</span></label>
+                    </div>
+                    <h3 class="text-sm font-bold text-gray-400 tracking-widest mb-2">2. 設定派發題數</h3>
+                    <input type="number" v-model.number="liveQuizConfig.count" min="1" max="100" class="w-full bg-black border border-gray-600 text-white p-3 font-bold focus:border-neon-cyan outline-none mb-6 text-xl text-center" placeholder="例如：20">
+                    <div class="mt-auto">
+                        <button @click="startLiveQuiz" :disabled="activeLiveQuiz" class="w-full bg-neon-green text-black hover:bg-green-500 font-black py-4 tracking-widest shadow-[0_0_15px_rgba(0,255,0,0.5)] transition disabled:opacity-30 disabled:cursor-not-allowed">▶ 立即派發考卷</button>
+                        <button @click="stopLiveQuiz" :disabled="!activeLiveQuiz" class="w-full mt-3 border border-red-700 text-red-500 hover:bg-red-900/50 font-bold py-3 tracking-widest transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">🛑 強制收卷</button>
+                    </div>
+                </div>
+
+                <div class="border border-gray-700 bg-gray-900/50 p-6 flex flex-col">
+                    <h2 class="text-xl font-bold text-neon-cyan mb-4 border-b border-gray-700 pb-2">📡 考試實況監控</h2>
+                    <div class="flex-1 overflow-y-auto cyber-scrollbar border border-gray-800 bg-black p-2 min-h-[300px]">
+                        <div v-if="!activeLiveQuiz" class="text-gray-500 text-sm font-bold tracking-widest text-center py-20 animate-pulse">【目前沒有進行中的考試】</div>
+                        <div v-else class="space-y-3">
+                            <div class="text-xs text-neon-yellow mb-2 tracking-widest border-b border-gray-800 pb-2 text-center">考試進行中... (共 {{ activeLiveQuiz.count }} 題)</div>
+                            
+                            <div v-for="(student, uid) in activeLiveQuiz.students" :key="uid" class="flex flex-col bg-gray-900 p-3 border-l-4 mb-2 relative" :class="student.cheatCount > 0 ? 'border-neon-red' : (student.status === 'finished' ? 'border-neon-cyan' : 'border-neon-green')">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="font-bold text-gray-200 tracking-wider">{{ student.name }}</span>
+                                    <span v-if="student.cheatCount > 0" class="text-[10px] bg-red-900 text-white px-2 py-0.5 font-bold animate-pulse rounded-full">⚠️ 違規 {{ student.cheatCount }} 次</span>
+                                </div>
+                                
+                                <div class="flex justify-between items-center text-xs z-10 relative">
+                                    <span v-if="student.status === 'finished'" class="text-neon-cyan font-bold bg-cyan-900/30 px-2 py-1">✅ 已交卷/放棄</span>
+                                    <span v-else class="text-gray-400 font-bold">進度：<span class="text-white">{{ student.progress || 1 }}</span> / {{ activeLiveQuiz.count }}</span>
+                                    <span class="text-neon-green font-black">答對 {{ student.score || 0 }} 題</span>
+                                </div>
+
+                                <div class="w-full bg-gray-800 h-1.5 mt-2 rounded-full overflow-hidden border border-gray-700">
+                                    <div class="h-full transition-all duration-500 rounded-full" 
+                                         :class="student.status === 'finished' ? 'bg-neon-cyan' : 'bg-neon-green'"
+                                         :style="{ width: (((student.progress || 0) / activeLiveQuiz.count) * 100) + '%' }"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border border-gray-700 bg-gray-900/50 p-6 mt-2">
+                <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-2">
+                    <h2 class="text-xl font-bold text-neon-yellow">⏳ 待審核答案庫</h2>
+                    <span class="text-sm font-bold text-gray-400 bg-black px-3 py-1 border border-gray-700">共 {{ pendingList.length }} 筆待處理</span>
+                </div>
+                <div v-if="pendingList.length === 0" class="text-center py-10 text-gray-500 font-bold tracking-widest">
+                    <span class="text-4xl mb-4 block">☕</span> 目前沒有需要審核的答案。
+                </div>
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div v-for="item in pendingList" :key="item.id" class="bg-black border border-gray-600 p-4 hover:border-yellow-600 transition">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <div class="text-xs text-gray-500 font-bold mb-1">學生：<span class="text-cyan-400">{{ item.studentName }}</span></div>
+                                <div class="text-2xl font-black text-white tracking-widest">{{ item.word }}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-[10px] text-gray-500">標準答案</div>
+                                <div class="text-sm font-bold text-neon-green">{{ item.expected }}</div>
+                            </div>
+                        </div>
+                        <div class="bg-gray-900 p-3 mb-4 border-l-4 border-yellow-500">
+                            <span class="text-xs text-gray-500 font-bold block mb-1">學生輸入：</span>
+                            <span class="text-xl font-bold text-neon-yellow">{{ item.studentAnswer }}</span>
+                        </div>
+                        <div class="flex flex-col gap-3 mt-2">
+                            <label class="flex items-center gap-2 cursor-pointer bg-gray-800 p-2 border border-gray-600 hover:border-cyan-500 transition rounded-sm">
+                                <input type="checkbox" v-model="item.addToDict" class="w-5 h-5 accent-cyan-500">
+                                <span class="text-sm font-bold text-cyan-400 tracking-widest">📚 同時將此答案加入系統字典</span>
+                            </label>
+                            <div class="flex gap-2">
+                                <button @click="resolvePending(item, 'correct')" class="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-3 text-base tracking-widest transition shadow-[0_0_10px_rgba(0,255,0,0.2)]">✅ 給予答對</button>
+                                <button @click="resolvePending(item, 'wrong')" class="flex-1 border-2 border-red-700 text-red-500 hover:bg-red-900/50 hover:text-white font-bold py-3 text-base tracking-widest transition">❌ 維持判錯</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="tab === 'log'" class="fade-in">
+            <div class="border border-gray-700 bg-gray-900/50 p-6">
+                <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-2">
+                    <h2 class="text-xl font-bold text-neon-cyan">📊 全服活動紀錄</h2>
+                    <button @click="fetchLogs(true)" class="bg-cyan-800 hover:bg-cyan-600 text-white px-4 py-2 font-bold tracking-widest text-sm transition shadow-[0_0_10px_rgba(0,255,255,0.2)]">🔄 重新整理</button>
+                </div>
+                
+                <div class="flex flex-wrap gap-4 mb-6 bg-black p-4 border border-gray-800">
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">📅 時間篩選</label>
+                        <select v-model="logFilters.time" class="w-full bg-gray-900 text-white border border-gray-700 p-2 font-bold focus:border-neon-cyan outline-none">
+                            <option value="all">全部時間</option>
+                            <option value="today">今天</option>
+                            <option value="3days">近 3 天</option>
+                            <option value="7days">近 7 天</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">🎮 活動類型</label>
+                        <select v-model="logFilters.type" class="w-full bg-gray-900 text-white border border-gray-700 p-2 font-bold focus:border-neon-cyan outline-none">
+                            <option value="all">全部類型</option>
+                            <option value="📇">📇 單字卡</option>
+                            <option value="🎯">🎯 自我考驗</option>
+                            <option value="🧠">🧠 字義盲測</option>
+                            <option value="⚔️">⚔️ 雙人死鬥</option>
+                            <option value="📝">📝 隨堂小考</option>
+                        </select>
+                    </div>
+                    <div class="flex-[2] min-w-[200px]">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">👤 學生姓名 (選填)</label>
+                        <input type="text" v-model="logFilters.name" placeholder="輸入姓名搜尋..." class="w-full bg-gray-900 text-white border border-gray-700 p-2 font-bold focus:border-neon-cyan outline-none">
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto cyber-scrollbar max-h-[500px] border border-gray-700">
+                    <div v-if="isLoadingLogs" class="text-center py-20 text-cyan-500 font-bold animate-pulse tracking-widest bg-black">
+                        <span class="text-4xl block mb-4">📡</span>
+                        正在從神聖殿堂 (Google Sheet) 擷取資料...
+                    </div>
+                    <table v-else class="w-full text-left border-collapse min-w-[900px] bg-black">
+                        <thead class="sticky top-0 bg-gray-800 z-10 shadow-md">
+                            <tr class="text-gray-300 tracking-widest text-sm">
+                                <th class="p-3 border-b border-gray-700 w-[15%]">時間</th>
+                                <th class="p-3 border-b border-gray-700 w-[10%]">玩家名稱</th>
+                                <th class="p-3 border-b border-gray-700 w-[25%]">活動紀錄 (主題)</th>
+                                <th class="p-3 border-b border-gray-700 w-[10%]">成績</th>
+                                <th class="p-3 border-b border-gray-700 w-[10%]">耗時</th>
+                                <th class="p-3 border-b border-gray-700 w-[10%] text-center">已作答數</th>
+                                <th class="p-3 border-b border-gray-700 w-[20%] text-center">錯題記錄</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(log, idx) in filteredLogs" :key="idx" class="hover:bg-gray-800/80 transition border-b border-gray-800/50">
+                                <td class="p-3 text-xs text-gray-400 whitespace-nowrap">{{ formatDate(log.date) }}</td>
+                                <td class="p-3 font-bold text-cyan-400">{{ log.name }}</td>
+                                <td class="p-3 text-sm text-gray-200">{{ log.theme }}</td>
+                                <td class="p-3 font-black text-lg" :class="getLogScoreColor(log.score)">{{ log.score }}</td>
+                                <td class="p-3 text-xs text-yellow-500 font-mono">{{ log.timeStr }}</td>
+                                <td class="p-3 font-bold text-gray-300 text-center">{{ log.answered || '-' }}</td>
+                                <td class="p-3 text-center">
+                                    <button v-if="log.wrongWords && log.wrongWords !== '無' && log.wrongWords !== 'X'" 
+                                            @click="openWrongWordsModal(log)" 
+                                            class="bg-transparent border border-red-500 text-red-400 hover:bg-red-900/50 px-3 py-1 text-xs font-bold tracking-widest transition">
+                                        🔍 檢視詳情
+                                    </button>
+                                    <span v-else class="text-xs text-gray-600 font-bold">-</span>
+                                </td>
+                            </tr>
+                            <tr v-if="filteredLogs.length === 0">
+                                <td colspan="7" class="p-12 text-center text-gray-500 font-bold tracking-widest bg-gray-900/30">沒有符合條件的紀錄。</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="selectedLogForWrongWords" class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[300] p-4 fade-in">
+            <div class="cyber-box-red w-full max-w-lg bg-black flex flex-col max-h-[80vh] overflow-hidden">
+                <div class="p-4 border-b border-red-900 flex justify-between items-center bg-red-950/30">
+                    <div>
+                        <h3 class="text-neon-red font-black tracking-widest text-lg">⚠️ 錯題與未答清單</h3>
+                        <p class="text-xs text-gray-400 font-bold mt-1">學生：{{ selectedLogForWrongWords.name }} | 主題：{{ selectedLogForWrongWords.theme }}</p>
+                    </div>
+                    <button @click="closeWrongWordsModal" class="text-red-500 hover:text-white text-3xl leading-none font-bold">&times;</button>
+                </div>
+                <div class="p-6 overflow-y-auto cyber-scrollbar bg-gray-900/50">
+                    <p class="text-gray-300 text-sm leading-loose tracking-wider font-mono bg-black p-4 border border-gray-800">
+                        {{ selectedLogForWrongWords.wrongWords }}
+                    </p>
+                </div>
+                <div class="p-3 border-t border-red-900 text-center bg-black">
+                    <button @click="closeWrongWordsModal" class="text-gray-500 hover:text-white text-sm font-bold tracking-widest px-6 py-2 border border-gray-700 hover:border-gray-500 transition">關閉視窗</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.database();
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const tab = ref('system');
+                const themes = ref(ALL_THEMES_DATA);
+                const settings = ref({ modes: {}, announcement: { text: '', isEnabled: false } });
+                const highlights = ref({ modes: { flashcard: false, quiz: false, blindTest: false, battle: false, liveQuiz: false }, themes: {} });
+                const liveQuizConfig = ref({ themes: ['🔥 2000單大魔王'], count: 20 });
+                const activeLiveQuiz = ref(null);
+                const pendingList = ref([]);
+
+                const isLoadingLogs = ref(false);
+                const rawLogs = ref([]);
+                const logFilters = ref({ time: 'all', type: 'all', name: '' });
+                const selectedLogForWrongWords = ref(null);
+                const realtimeMsgInput = ref('');
+                const visitorCount = ref(0);
+
+                onMounted(() => {
+                    db.ref('app_state/system_settings').on('value', snap => {
+                        if (snap.exists()) {
+                            const data = snap.val();
+                            if (data.modes) settings.value.modes = data.modes;
+                            if (data.announcement) settings.value.announcement = data.announcement;
+                            if (data.highlights) highlights.value = data.highlights;
+                        }
+                    });
+
+                    db.ref('app_state/visitor_count').on('value', snap => {
+                        visitorCount.value = snap.val() || 0;
+                    });
+
+                    db.ref('live_quiz_pending').on('value', snap => {
+                        if (snap.exists()) {
+                            let list = [];
+                            snap.forEach(child => { list.push({ id: child.key, addToDict: false, ...child.val() }); });
+                            pendingList.value = list.sort((a,b) => b.timestamp - a.timestamp);
+                        } else {
+                            pendingList.value = [];
+                        }
+                    });
+
+                    db.ref('live_quiz_active').on('value', snap => {
+                        if(snap.exists()) activeLiveQuiz.value = snap.val();
+                        else activeLiveQuiz.value = null;
+                    });
+                });
+
+                const sendRealtimeMsg = () => {
+                    if (!realtimeMsgInput.value.trim()) return;
+                    if (confirm(`即將向全服學生彈出強制通知：\n「${realtimeMsgInput.value}」\n確定發送嗎？`)) {
+                        db.ref('app_state/realtime_msg').set({
+                            text: realtimeMsgInput.value.trim(),
+                            timestamp: Date.now()
+                        });
+                        realtimeMsgInput.value = '';
+                        alert('🚨 廣播已發送！學生畫面將立即彈出。');
+                    }
+                };
+
+                const saveSystemSettings = () => { db.ref('app_state/system_settings/modes').set(settings.value.modes); alert('模式開關已儲存！'); };
+                const sendAnnouncement = () => { settings.value.announcement.timestamp = Date.now(); db.ref('app_state/system_settings/announcement').set(settings.value.announcement); alert('公告已更新並發布！'); };
+                const saveHighlights = () => { db.ref('app_state/system_settings/highlights').set(highlights.value); alert('發光矩陣設定已成功同步至全服！'); };
+
+                const startLiveQuiz = () => {
+                    if (liveQuizConfig.value.themes.length === 0) return alert('請至少勾選一個測驗範圍！');
+                    if (!liveQuizConfig.value.count || liveQuizConfig.value.count <= 0) return alert('請設定正確的測驗題數！');
+                    db.ref('live_quiz_active').set({ 
+                        themes: liveQuizConfig.value.themes, 
+                        count: Number(liveQuizConfig.value.count),
+                        startTime: Date.now(), 
+                        students: {} 
+                    });
+                    alert(`✅ 已派發考卷！`);
+                };
+                const stopLiveQuiz = () => { if(confirm('確定要強制收卷嗎？學生將無法繼續作答。')) db.ref('live_quiz_active').remove(); };
+
+                const resolvePending = (item, action) => {
+                    if (action === 'correct') {
+                        db.ref(`live_quiz_active/students/${item.studentId}/score`).transaction(s => (s || 0) + 1);
+                        if (item.addToDict) {
+                            db.ref(`app_state/custom_dict/${item.word}`).once('value', snap => {
+                                let dict = snap.val() || [];
+                                if (!dict.includes(item.studentAnswer)) dict.push(item.studentAnswer);
+                                db.ref(`app_state/custom_dict/${item.word}`).set(dict);
+                            });
+                        }
+                    }
+                    db.ref(`live_quiz_pending/${item.id}`).remove();
+                };
+
+                // 🌟 修正：增加 force 參數強制跳過快取
+                const fetchLogs = (force = false) => {
+                    if (isLoadingLogs.value) return;
+                    if (!force && rawLogs.value.length > 0) return;
+                    
+                    isLoadingLogs.value = true;
+                    
+                    fetch(`${GOOGLE_API_URL}?action=getAll`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (Array.isArray(data)) {
+                                rawLogs.value = data.reverse();
+                            }
+                            isLoadingLogs.value = false;
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            isLoadingLogs.value = false;
+                            alert("無法連接到 Google Sheet！請確認您的 Apps Script 是否已經加上了 action === 'getAll' 的功能碼！");
+                        });
+                };
+
+                const filteredLogs = computed(() => {
+                    let result = rawLogs.value;
+                    const now = new Date().getTime();
+
+                    if (logFilters.value.time !== 'all') {
+                        result = result.filter(log => {
+                            if (!log.date) return true;
+                            const logTime = new Date(log.date).getTime();
+                            const diffDays = (now - logTime) / (1000 * 3600 * 24);
+                            if (logFilters.value.time === 'today') return diffDays <= 1;
+                            if (logFilters.value.time === '3days') return diffDays <= 3;
+                            if (logFilters.value.time === '7days') return diffDays <= 7;
+                            return true;
+                        });
+                    }
+                    if (logFilters.value.type !== 'all') {
+                        result = result.filter(log => log.theme && log.theme.includes(logFilters.value.type));
+                    }
+                    if (logFilters.value.name.trim() !== '') {
+                        const searchName = logFilters.value.name.trim().toLowerCase();
+                        result = result.filter(log => log.name && log.name.toLowerCase().includes(searchName));
+                    }
+                    return result;
+                });
+
+                const formatDate = (dateStr) => {
+                    if (!dateStr) return '未知時間';
+                    const d = new Date(dateStr);
+                    if (isNaN(d.getTime())) return dateStr;
+                    return `${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                };
+
+                const getLogScoreColor = (score) => {
+                    if (score === 'X') return 'text-cyan-500';
+                    if (score === '勝') return 'text-neon-red';
+                    if (score === '敗' || score === '撤退') return 'text-gray-500';
+                    const num = parseInt(score);
+                    if (!isNaN(num) && num === 0) return 'text-red-500';
+                    return 'text-neon-green';
+                };
+
+                const openWrongWordsModal = (log) => { selectedLogForWrongWords.value = log; };
+                const closeWrongWordsModal = () => { selectedLogForWrongWords.value = null; };
+
+                return {
+                    tab, themes, settings, highlights, saveSystemSettings, sendAnnouncement, saveHighlights,
+                    liveQuizConfig, activeLiveQuiz, startLiveQuiz, stopLiveQuiz,
+                    pendingList, resolvePending,
+                    isLoadingLogs, rawLogs, logFilters, fetchLogs, filteredLogs, formatDate, getLogScoreColor,
+                    selectedLogForWrongWords, openWrongWordsModal, closeWrongWordsModal,
+                    realtimeMsgInput, sendRealtimeMsg, visitorCount
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
