@@ -354,7 +354,10 @@
                 const themes = ref(ALL_THEMES_DATA);
                 const settings = ref({ modes: {}, announcement: { text: '', isEnabled: false } });
                 const highlights = ref({ modes: { flashcard: false, quiz: false, blindTest: false, battle: false, liveQuiz: false }, themes: {} });
-                const liveQuizConfig = ref({ themes: ['🔥 2000單大魔王'], count: 20 });
+                
+                // 🌟 修正：將預設勾選的主題清空，改為空陣列 []
+                const liveQuizConfig = ref({ themes: [], count: 20 });
+                
                 const activeLiveQuiz = ref(null);
                 const pendingList = ref([]);
 
@@ -459,9 +462,7 @@
                 const fetchLogs = (force = false) => {
                     if (isLoadingLogs.value) return;
                     if (!force && rawLogs.value.length > 0) return;
-                    
                     isLoadingLogs.value = true;
-                    
                     fetch(`${GOOGLE_API_URL}?action=getAll`)
                         .then(res => res.json())
                         .then(data => {
@@ -480,7 +481,6 @@
                 const filteredLogs = computed(() => {
                     let result = rawLogs.value;
                     const now = new Date().getTime();
-
                     if (logFilters.value.time !== 'all') {
                         result = result.filter(log => {
                             if (!log.date) return true;
@@ -522,7 +522,7 @@
                 const closeWrongWordsModal = () => { selectedLogForWrongWords.value = null; };
 
                 return {
-                    isAuthorized, adminPasswordInput, checkAdminPassword, logoutAdmin, // 新增的權限控制變數
+                    isAuthorized, adminPasswordInput, checkAdminPassword, logoutAdmin,
                     tab, themes, settings, highlights, saveSystemSettings, sendAnnouncement, saveHighlights,
                     liveQuizConfig, activeLiveQuiz, startLiveQuiz, stopLiveQuiz,
                     pendingList, resolvePending,
