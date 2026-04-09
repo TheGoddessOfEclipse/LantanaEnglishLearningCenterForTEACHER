@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>總司令部 - 特工名冊管理系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{neon:{cyan:'#0ff',pink:'#f0f',yellow:'#ff0',green:'#0f0',red:'#ff003c',bg:'#050b14'}}}}}</script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="config.js"></script>
+    <style>
+        body{background-color:#050b14; font-family: sans-serif; color: white;}
+        .cyber-box{border:1px solid #0ff;background:rgba(0,20,40,0.8);box-shadow:inset 0 0 15px rgba(0,255,255,0.1);}
+        .cyber-table th{background:rgba(0,255,255,0.1); border-bottom: 2px solid #0ff; color: #0ff; letter-spacing: 0.1em;}
+        .cyber-table td{border-bottom: 1px solid rgba(0,255,255,0.2); padding: 12px 8px;}
+        .cyber-table tr:hover{background:rgba(0,255,255,0.05);}
+        .scanline{background:linear-gradient(to bottom,transparent 50%,rgba(0,255,255,0.1) 51%);background-size:100% 4px;animation:scan 10s linear infinite; pointer-events: none;}
+        @keyframes scan{0%{background-position:0 0;}100%{background-position:0 100vh;}}
+        ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-track{background:#050b14;} ::-webkit-scrollbar-thumb{background:#0ff;}
+    </style>
+</head>
+<body class="relative min-h-screen p-4 md:p-8 selection:bg-neon-cyan selection:text-black">
+    <div class="fixed inset-0 scanline z-0"></div>
+
+    <div id="app" class="relative z-10 max-w-6xl mx-auto">
+        
+        <div class="mb-6 flex justify-start">
+            <button onclick="window.location.href='index.html'" class="text-sm font-bold tracking-widest text-cyan-400 hover:text-black transition border border-cyan-700 hover:border-neon-cyan hover:bg-neon-cyan px-4 py-2 bg-gray-900/50 flex items-center gap-2 shadow-[0_0_10px_rgba(0,255,255,0.1)]">
+                <span class="text-lg leading-none">≪</span> 返回作戰指揮中心
+            </button>
+        </div>
+
+        <div class="flex justify-between items-end mb-8 border-b-2 border-neon-cyan pb-4">
+            <div>
+                <h1 class="text-3xl font-black tracking-widest text-white drop-shadow-[0_0_10px_#0ff]">🛡️ 總司令部人事局</h1>
+                <p class="text-cyan-500 font-bold tracking-widest text-sm mt-1">> 最高機密：特工檔案管理系統</p>
+            </div>
+            <div class="text-right">
+                <div class="text-neon-cyan font-black text-xl">{{ Object.keys(users).length }}</div>
+                <div class="text-gray-500 text-xs font-bold tracking-widest">建檔總人數</div>
+            </div>
+        </div>
+
+        <div class="cyber-box overflow-x-auto rounded-lg">
+            <table class="w-full text-left cyber-table whitespace-nowrap">
+                <thead>
+                    <tr>
+                        <th class="p-3 font-black text-sm">特工學號</th>
+                        <th class="p-3 font-black text-sm">真實姓名</th>
+                        <th class="p-3 font-black text-sm">戰場暱稱</th>
+                        <th class="p-3 font-black text-sm">電子郵件</th>
+                        <th class="p-3 font-black text-sm">建檔時間</th>
+                        <th class="p-3 font-black text-sm text-center">指揮官操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-if="Object.keys(users).length === 0">
+                        <td colspan="6" class="text-center py-8 text-gray-500 font-bold tracking-widest">目前尚無特工報到。</td>
+                    </tr>
+                    <tr v-for="(user, uid) in users" :key="uid">
+                        <td class="font-bold text-gray-300">{{ user.studentId }}</td>
+                        <td class="font-bold text-white">{{ user.realName }}</td>
+                        <td class="font-bold text-neon-yellow">{{ user.nickname }}</td>
+                        <td class="text-sm text-gray-400">{{ user.email }}</td>
+                        <td class="text-xs text-gray-500">{{ formatDate(user.createdAt) }}</td>
+                        <td class="text-center space-x-2">
+                            <button @click="openEditModal(uid, user)" class="bg-cyan-900/50 text-neon-cyan border border-neon-cyan px-3 py-1 text-xs font-bold tracking-widest hover:bg-neon-cyan hover:text-black transition">編輯</button>
+                            <button @click="deleteUser(uid, user.realName)" class="bg-red-900/50 text-neon-red border border-neon-red px-3 py-1 text-xs font-bold tracking-widest hover:bg-neon-red hover:text-white transition">銷毀</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div v-if="editingUser" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+            <div class="cyber-box p-6 w-full max-w-md bg-black">
+                <h2 class="text-xl font-black text-neon-cyan mb-4 tracking-widest border-b border-cyan-800 pb-2">📝 強制篡改特工資料</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">學號 (不可與他人重複)</label>
+                        <input v-model="editData.studentId" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">真實姓名</label>
+                        <input v-model="editData.realName" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">戰場暱稱</label>
+                        <input v-model="editData.nickname" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">電子郵件</label>
+                        <input v-model="editData.email" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
+                    </div>
+                </div>
+
+                <div class="flex gap-3 mt-6">
+                    <button @click="editingUser = null" class="flex-1 bg-gray-800 text-gray-300 py-2 font-bold hover:bg-gray-700 transition">取消</button>
+                    <button @click="saveEdit" class="flex-1 bg-neon-cyan text-black py-2 font-black tracking-widest hover:bg-cyan-400 transition shadow-[0_0_10px_#0ff]">儲存覆蓋</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.database();
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const users = ref({});
+                const editingUser = ref(null);
+                const editData = ref({});
+
+                onMounted(() => {
+                    db.ref('app_state/users').on('value', snap => {
+                        if (snap.exists()) {
+                            users.value = snap.val();
+                        } else {
+                            users.value = {};
+                        }
+                    });
+                });
+
+                const formatDate = (timestamp) => {
+                    if (!timestamp) return '未知';
+                    const d = new Date(timestamp);
+                    return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                };
+
+                const openEditModal = (uid, user) => {
+                    editingUser.value = uid;
+                    editData.value = { ...user };
+                };
+
+                const saveEdit = async () => {
+                    if (!editData.value.studentId || !editData.value.realName) {
+                        alert("學號與姓名不能為空！");
+                        return;
+                    }
+                    try {
+                        await db.ref(`app_state/users/${editingUser.value}`).update(editData.value);
+                        editingUser.value = null;
+                        editData.value = {};
+                    } catch (error) {
+                        alert("更新失敗：" + error.message);
+                    }
+                };
+
+                const deleteUser = async (uid, name) => {
+                    const msg = `⚠️ 警告：您即將徹底銷毀特工【${name}】的檔案！\n\n銷毀後該名學生將失去所有資料。若他要重新註冊，學號必須加上後綴（例如 11201 改為 11201-2）。\n\n確定要執行銷毀嗎？`;
+                    if (confirm(msg)) {
+                        try {
+                            await db.ref(`app_state/users/${uid}`).remove();
+                        } catch (error) {
+                            alert("銷毀失敗：" + error.message);
+                        }
+                    }
+                };
+
+                return {
+                    users, formatDate,
+                    editingUser, editData, openEditModal, saveEdit, deleteUser
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
