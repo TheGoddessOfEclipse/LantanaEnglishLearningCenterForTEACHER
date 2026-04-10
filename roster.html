@@ -2,8 +2,8 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>總司令部 - 特工名冊管理系統</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>馬纓丹 ONLINE - 特工檔案室</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config={theme:{extend:{colors:{neon:{cyan:'#0ff',pink:'#f0f',yellow:'#ff0',green:'#0f0',red:'#ff003c',bg:'#050b14'}}}}}</script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -11,161 +11,230 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="config.js"></script>
     <style>
-        body{background-color:#050b14; font-family: sans-serif; color: white;}
-        .cyber-box{border:1px solid #0ff;background:rgba(0,20,40,0.8);box-shadow:inset 0 0 15px rgba(0,255,255,0.1);}
-        .cyber-table th{background:rgba(0,255,255,0.1); border-bottom: 2px solid #0ff; color: #0ff; letter-spacing: 0.1em;}
-        .cyber-table td{border-bottom: 1px solid rgba(0,255,255,0.2); padding: 12px 8px;}
-        .cyber-table tr:hover{background:rgba(0,255,255,0.05);}
-        .scanline{background:linear-gradient(to bottom,transparent 50%,rgba(0,255,255,0.1) 51%);background-size:100% 4px;animation:scan 10s linear infinite; pointer-events: none;}
-        @keyframes scan{0%{background-position:0 0;}100%{background-position:0 100vh;}}
-        ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-track{background:#050b14;} ::-webkit-scrollbar-thumb{background:#0ff;}
+        body { background-color: #050b14; color: #e5e7eb; font-family: sans-serif; }
+        .scanline { background: linear-gradient(to bottom, transparent 50%, rgba(0, 255, 255, 0.1) 51%); background-size: 100% 4px; animation: scan 10s linear infinite; pointer-events: none; }
+        @keyframes scan { 0% { background-position: 0 0; } 100% { background-position: 0 100vh; } }
+        ::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-track { background: #111; } ::-webkit-scrollbar-thumb { background: #0ff; }
+        .cyber-box-cyan { border: 1px solid #0ff; background: rgba(0,20,40,0.6); box-shadow: inset 0 0 15px rgba(0,255,255,0.1); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%); }
+        .fade-in { animation: fadeIn 0.5s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="relative min-h-screen p-4 md:p-8 selection:bg-neon-cyan selection:text-black">
+<body class="relative min-h-screen p-4 md:p-8">
     <div class="fixed inset-0 scanline z-0"></div>
 
     <div id="app" class="relative z-10 max-w-6xl mx-auto">
         
-        <div class="mb-6 flex justify-start">
-            <button onclick="window.location.href='index.html'" class="text-sm font-bold tracking-widest text-cyan-400 hover:text-black transition border border-cyan-700 hover:border-neon-cyan hover:bg-neon-cyan px-4 py-2 bg-gray-900/50 flex items-center gap-2 shadow-[0_0_10px_rgba(0,255,255,0.1)]">
-                <span class="text-lg leading-none">≪</span> 返回作戰指揮中心
-            </button>
+        <div v-if="!isAuthorized" class="flex flex-col items-center justify-center min-h-[50vh] fade-in">
+            <div class="text-6xl mb-4">⛔</div>
+            <h2 class="text-2xl font-black text-neon-red mb-4">存取被拒！請先至控制台解鎖。</h2>
+            <button onclick="window.location.href='teacher.html'" class="bg-gray-800 text-white border border-gray-500 px-6 py-3 font-bold tracking-widest hover:bg-gray-700 transition">返回教師控制台</button>
         </div>
 
-        <div class="flex justify-between items-end mb-8 border-b-2 border-neon-cyan pb-4">
-            <div>
-                <h1 class="text-3xl font-black tracking-widest text-white drop-shadow-[0_0_10px_#0ff]">🛡️ 總司令部人事局</h1>
-                <p class="text-cyan-500 font-bold tracking-widest text-sm mt-1">> 最高機密：特工檔案管理系統</p>
-            </div>
-            <div class="text-right">
-                <div class="text-neon-cyan font-black text-xl">{{ Object.keys(users).length }}</div>
-                <div class="text-gray-500 text-xs font-bold tracking-widest">建檔總人數</div>
-            </div>
-        </div>
-
-        <div class="cyber-box overflow-x-auto rounded-lg">
-            <table class="w-full text-left cyber-table whitespace-nowrap">
-                <thead>
-                    <tr>
-                        <th class="p-3 font-black text-sm">特工學號</th>
-                        <th class="p-3 font-black text-sm">真實姓名</th>
-                        <th class="p-3 font-black text-sm">戰場暱稱</th>
-                        <th class="p-3 font-black text-sm">電子郵件</th>
-                        <th class="p-3 font-black text-sm">建檔時間</th>
-                        <th class="p-3 font-black text-sm text-center">指揮官操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="Object.keys(users).length === 0">
-                        <td colspan="6" class="text-center py-8 text-gray-500 font-bold tracking-widest">目前尚無特工報到。</td>
-                    </tr>
-                    <tr v-for="(user, uid) in users" :key="uid">
-                        <td class="font-bold text-gray-300">{{ user.studentId }}</td>
-                        <td class="font-bold text-white">{{ user.realName }}</td>
-                        <td class="font-bold text-neon-yellow">{{ user.nickname }}</td>
-                        <td class="text-sm text-gray-400">{{ user.email }}</td>
-                        <td class="text-xs text-gray-500">{{ formatDate(user.createdAt) }}</td>
-                        <td class="text-center space-x-2">
-                            <button @click="openEditModal(uid, user)" class="bg-cyan-900/50 text-neon-cyan border border-neon-cyan px-3 py-1 text-xs font-bold tracking-widest hover:bg-neon-cyan hover:text-black transition">編輯</button>
-                            <button @click="deleteUser(uid, user.realName)" class="bg-red-900/50 text-neon-red border border-neon-red px-3 py-1 text-xs font-bold tracking-widest hover:bg-neon-red hover:text-white transition">銷毀</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div v-if="editingUser" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-            <div class="cyber-box p-6 w-full max-w-md bg-black">
-                <h2 class="text-xl font-black text-neon-cyan mb-4 tracking-widest border-b border-cyan-800 pb-2">📝 強制篡改特工資料</h2>
-                
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-400 mb-1">學號 (不可與他人重複)</label>
-                        <input v-model="editData.studentId" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-400 mb-1">真實姓名</label>
-                        <input v-model="editData.realName" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-400 mb-1">戰場暱稱</label>
-                        <input v-model="editData.nickname" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-400 mb-1">電子郵件</label>
-                        <input v-model="editData.email" type="text" class="w-full bg-gray-900 border border-cyan-800 text-white px-3 py-2 focus:outline-none focus:border-neon-cyan transition">
-                    </div>
+        <div v-else class="fade-in">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-cyan-900 pb-4 gap-4">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-black text-white tracking-widest drop-shadow-[0_0_10px_#0ff]">📁 特工檔案室</h1>
+                    <p class="text-gray-400 font-bold mt-2 text-sm tracking-widest">>> 全體特工戰力與精熟度總覽</p>
                 </div>
-
-                <div class="flex gap-3 mt-6">
-                    <button @click="editingUser = null" class="flex-1 bg-gray-800 text-gray-300 py-2 font-bold hover:bg-gray-700 transition">取消</button>
-                    <button @click="saveEdit" class="flex-1 bg-neon-cyan text-black py-2 font-black tracking-widest hover:bg-cyan-400 transition shadow-[0_0_10px_#0ff]">儲存覆蓋</button>
+                <div class="flex gap-4 w-full md:w-auto">
+                    <input type="text" v-model="searchQuery" placeholder="🔍 搜尋學號或姓名..." class="flex-1 md:w-64 bg-black border border-cyan-800 text-neon-cyan px-4 py-2 font-bold focus:outline-none focus:border-neon-cyan focus:shadow-[0_0_10px_rgba(0,255,255,0.5)] transition tracking-widest text-sm">
+                    <button onclick="window.location.href='teacher.html'" class="bg-transparent border border-cyan-500 text-neon-cyan hover:bg-neon-cyan hover:text-black px-6 py-2 font-black tracking-widest transition shadow-[0_0_10px_rgba(0,255,255,0.2)] whitespace-nowrap">
+                        返回控制台
+                    </button>
                 </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-black/60 border border-gray-700 p-4 text-center">
+                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">總註冊特工</div>
+                    <div class="text-3xl font-black text-white">{{ users.length }} <span class="text-sm text-gray-500">名</span></div>
+                </div>
+                <div class="bg-black/60 border border-gray-700 p-4 text-center">
+                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">題庫總單字量</div>
+                    <div class="text-3xl font-black text-neon-cyan">{{ totalWordsCount }} <span class="text-sm text-cyan-800">字</span></div>
+                </div>
+                <div class="bg-black/60 border border-gray-700 p-4 text-center">
+                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">全軍平均精熟度</div>
+                    <div class="text-3xl font-black text-neon-yellow">{{ averageMastery }}%</div>
+                </div>
+                <div class="bg-black/60 border border-gray-700 p-4 text-center flex flex-col justify-center">
+                    <button @click="refreshData" class="text-sm font-bold text-cyan-400 hover:text-white border border-cyan-800 hover:bg-cyan-900/50 py-2 transition tracking-widest">🔄 手動刷新檔案</button>
+                </div>
+            </div>
+
+            <div class="cyber-box-cyan bg-gray-900/80 p-4 md:p-6">
+                <div class="overflow-x-auto cyber-scrollbar">
+                    <div v-if="isLoading" class="text-center py-20 text-cyan-500 font-bold animate-pulse tracking-widest">
+                        📡 正在從神聖殿堂調取特工機密檔案...
+                    </div>
+                    <table v-else class="w-full text-left border-collapse min-w-[800px]">
+                        <thead class="bg-gray-800 border-b-2 border-cyan-800">
+                            <tr class="text-gray-300 tracking-widest text-sm">
+                                <th class="p-4 font-bold">特工學號</th>
+                                <th class="p-4 font-bold">真實身分</th>
+                                <th class="p-4 font-bold">戰場暱稱</th>
+                                <th class="p-4 font-bold w-[35%]">🎯 總精熟度 (已熟記 / 總字數)</th>
+                                <th class="p-4 font-bold text-center">註冊時間</th>
+                                <th class="p-4 font-bold text-center">管理</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(user, idx) in filteredUsers" :key="user.uid" class="hover:bg-gray-800/80 transition border-b border-gray-800/50">
+                                <td class="p-4 font-mono text-neon-cyan font-bold">{{ user.studentId }}</td>
+                                <td class="p-4 font-bold text-white">{{ user.realName }}</td>
+                                <td class="p-4 text-gray-400">{{ user.nickname }}</td>
+                                
+                                <td class="p-4">
+                                    <div class="flex justify-between items-end mb-1">
+                                        <span class="text-xs font-bold" :class="getProgressColorText(user.progress)">{{ user.progress }}%</span>
+                                        <span class="text-[10px] text-gray-500 font-mono">{{ user.masteryCount }} / {{ totalWordsCount }}</span>
+                                    </div>
+                                    <div class="w-full bg-black h-2 border border-gray-700 relative overflow-hidden">
+                                        <div class="h-full transition-all duration-1000" 
+                                             :class="getProgressColorBg(user.progress)"
+                                             :style="{ width: user.progress + '%' }"></div>
+                                    </div>
+                                </td>
+
+                                <td class="p-4 text-xs text-gray-500 text-center tracking-wider">{{ formatDate(user.createdAt) }}</td>
+                                
+                                <td class="p-4 text-center">
+                                    <button @click="viewDetails(user)" class="text-xs border border-gray-600 text-gray-400 hover:text-white hover:bg-gray-700 px-3 py-1 font-bold transition">
+                                        查看
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr v-if="filteredUsers.length === 0">
+                                <td colspan="6" class="p-12 text-center text-gray-500 font-bold tracking-widest bg-black/40">找不到符合條件的特工。</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="mt-8 text-center text-[10px] text-gray-600 font-bold tracking-widest">
+                【 © 2026 本網頁為 Jason Wang 之智慧財產 】
             </div>
         </div>
 
     </div>
 
     <script>
+        if (typeof FIREBASE_CONFIG === 'undefined') { window.FIREBASE_CONFIG = { apiKey: "preview", authDomain: "preview", databaseURL: "preview", projectId: "preview" }; window.ALL_THEMES_DATA = [{ name: '預覽用', icon: '🧪', words: [{word: 'test', meaning: '測試', pos: 'n.'}] }]; }
         firebase.initializeApp(FIREBASE_CONFIG);
         const db = firebase.database();
-        const { createApp, ref, onMounted } = Vue;
+        const { createApp, ref, computed, onMounted } = Vue;
 
         createApp({
             setup() {
-                const users = ref({});
-                const editingUser = ref(null);
-                const editData = ref({});
+                // 🔐 驗證是否從 teacher.html 合法登入
+                const isAuthorized = ref(sessionStorage.getItem('admin_auth') === 'true');
+                
+                const users = ref([]);
+                const isLoading = ref(true);
+                const searchQuery = ref('');
 
-                onMounted(() => {
-                    db.ref('app_state/users').on('value', snap => {
-                        if (snap.exists()) {
-                            users.value = snap.val();
-                        } else {
-                            users.value = {};
-                        }
-                    });
+                // 🌟 計算題庫總單字量
+                const totalWordsCount = computed(() => {
+                    let count = 0;
+                    if (typeof ALL_THEMES_DATA !== 'undefined') {
+                        ALL_THEMES_DATA.forEach(t => count += t.words.length);
+                    }
+                    return count > 0 ? count : 1; // 防呆避免除以0
                 });
 
-                const formatDate = (timestamp) => {
-                    if (!timestamp) return '未知';
-                    const d = new Date(timestamp);
-                    return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-                };
+                // 🌟 計算全軍平均精熟度
+                const averageMastery = computed(() => {
+                    if (users.value.length === 0) return 0;
+                    let totalProgress = 0;
+                    users.value.forEach(u => totalProgress += parseFloat(u.progress));
+                    return (totalProgress / users.value.length).toFixed(1);
+                });
 
-                const openEditModal = (uid, user) => {
-                    editingUser.value = uid;
-                    editData.value = { ...user };
-                };
-
-                const saveEdit = async () => {
-                    if (!editData.value.studentId || !editData.value.realName) {
-                        alert("學號與姓名不能為空！");
-                        return;
-                    }
-                    try {
-                        await db.ref(`app_state/users/${editingUser.value}`).update(editData.value);
-                        editingUser.value = null;
-                        editData.value = {};
-                    } catch (error) {
-                        alert("更新失敗：" + error.message);
-                    }
-                };
-
-                const deleteUser = async (uid, name) => {
-                    const msg = `⚠️ 警告：您即將徹底銷毀特工【${name}】的檔案！\n\n銷毀後該名學生將失去所有資料。若他要重新註冊，學號必須加上後綴（例如 11201 改為 11201-2）。\n\n確定要執行銷毀嗎？`;
-                    if (confirm(msg)) {
-                        try {
-                            await db.ref(`app_state/users/${uid}`).remove();
-                        } catch (error) {
-                            alert("銷毀失敗：" + error.message);
+                // 🌟 核心數據抓取
+                const fetchUsersData = () => {
+                    if (!isAuthorized.value) return;
+                    isLoading.value = true;
+                    
+                    db.ref('app_state/users').once('value').then(snap => {
+                        let list = [];
+                        if (snap.exists()) {
+                            snap.forEach(child => {
+                                let u = child.val();
+                                u.uid = child.key;
+                                
+                                // 計算該名學生的精熟單字數
+                                u.masteryCount = u.mastery ? Object.keys(u.mastery).length : 0;
+                                
+                                // 計算百分比
+                                u.progress = ((u.masteryCount / totalWordsCount.value) * 100).toFixed(1);
+                                
+                                list.push(u);
+                            });
+                            // 依照註冊時間新到舊排序
+                            list.sort((a, b) => b.createdAt - a.createdAt);
                         }
+                        users.value = list;
+                        isLoading.value = false;
+                    }).catch(err => {
+                        console.error(err);
+                        alert("讀取檔案失敗！");
+                        isLoading.value = false;
+                    });
+                };
+
+                onMounted(() => {
+                    if (isAuthorized.value) {
+                        fetchUsersData();
                     }
+                });
+
+                const refreshData = () => {
+                    fetchUsersData();
+                };
+
+                // 🔍 搜尋過濾器
+                const filteredUsers = computed(() => {
+                    if (!searchQuery.value.trim()) return users.value;
+                    const q = searchQuery.value.trim().toLowerCase();
+                    return users.value.filter(u => 
+                        (u.realName && u.realName.toLowerCase().includes(q)) ||
+                        (u.studentId && u.studentId.toLowerCase().includes(q)) ||
+                        (u.nickname && u.nickname.toLowerCase().includes(q))
+                    );
+                });
+
+                // 🎨 UI 顏色輔助函數
+                const getProgressColorText = (progress) => {
+                    const p = parseFloat(progress);
+                    if (p >= 80) return 'text-neon-green';
+                    if (p >= 33) return 'text-neon-cyan';
+                    if (p > 0) return 'text-neon-yellow';
+                    return 'text-gray-500';
+                };
+
+                const getProgressColorBg = (progress) => {
+                    const p = parseFloat(progress);
+                    if (p >= 80) return 'bg-neon-green shadow-[0_0_10px_#0f0]';
+                    if (p >= 33) return 'bg-neon-cyan shadow-[0_0_10px_#0ff]';
+                    if (p > 0) return 'bg-neon-yellow';
+                    return 'bg-gray-800';
+                };
+
+                const formatDate = (ts) => {
+                    if (!ts) return '-';
+                    const d = new Date(ts);
+                    return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
+                };
+
+                const viewDetails = (user) => {
+                    alert(`【系統提示】\n特工 ${user.realName} (${user.studentId})\n已精熟 ${user.masteryCount} 個單字。\n詳細裝備庫檢視功能開發中！`);
                 };
 
                 return {
-                    users, formatDate,
-                    editingUser, editData, openEditModal, saveEdit, deleteUser
+                    isAuthorized, users, isLoading, searchQuery, filteredUsers,
+                    totalWordsCount, averageMastery, refreshData,
+                    getProgressColorText, getProgressColorBg, formatDate, viewDetails
                 };
             }
         }).mount('#app');
