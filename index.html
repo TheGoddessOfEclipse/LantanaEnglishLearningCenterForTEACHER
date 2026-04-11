@@ -366,7 +366,6 @@
 
         createApp({
             setup() {
-                // 🌟 授權狀態管理
                 const isAuthorized = ref(sessionStorage.getItem('admin_auth') === 'true');
                 const adminPasswordInput = ref('');
 
@@ -386,7 +385,6 @@
                 const realtimeMsgInput = ref('');
                 const visitorCount = ref(0);
 
-                // 🌟 新增：文法任務陣列與變數
                 const grammarAssignments = ref({});
                 const GRAMMAR_THEMES = [
                     { id: 'pronouns', name: '代名詞', icon: '👤', color: '#0ff' },
@@ -400,6 +398,12 @@
                     { id: 'patterns', name: '句型', icon: '📐', color: '#ff0' },
                     { id: 'clauses', name: '子句', icon: '🛰️', color: '#14b8a6' }
                 ];
+
+                // 🌟 Firebase 防爆轉換器
+                const getSafeWordKey = (word) => {
+                    if (!word) return 'unknown';
+                    return word.replace(/\./g, '_dot_').replace(/[#$\[\]]/g, '_');
+                };
 
                 const checkAdminPassword = () => {
                     if (adminPasswordInput.value === 'theflyingrabbit') {
@@ -417,7 +421,6 @@
                     sessionStorage.removeItem('admin_auth');
                 };
 
-                // 🌟 新增：切換文法任務狀態
                 const toggleGrammarTask = (themeId) => {
                     const currentState = !!grammarAssignments.value[themeId];
                     db.ref(`app_state/grammar_assignments/${themeId}`).set(!currentState);
@@ -433,7 +436,6 @@
                         }
                     });
 
-                    // 🌟 新增：監聽文法任務 Firebase 節點
                     db.ref('app_state/grammar_assignments').on('value', snap => {
                         grammarAssignments.value = snap.val() || {};
                     });
@@ -491,10 +493,12 @@
                     if (action === 'correct') {
                         db.ref(`live_quiz_active/students/${item.studentId}/score`).transaction(s => (s || 0) + 1);
                         if (item.addToDict) {
-                            db.ref(`app_state/custom_dict/${item.word}`).once('value', snap => {
+                            // 🌟 存入系統字典前，將單字轉換為安全格式
+                            const safeWord = getSafeWordKey(item.word);
+                            db.ref(`app_state/custom_dict/${safeWord}`).once('value', snap => {
                                 let dict = snap.val() || [];
                                 if (!dict.includes(item.studentAnswer)) dict.push(item.studentAnswer);
-                                db.ref(`app_state/custom_dict/${item.word}`).set(dict);
+                                db.ref(`app_state/custom_dict/${safeWord}`).set(dict);
                             });
                         }
                     }
@@ -571,7 +575,7 @@
                     isLoadingLogs, rawLogs, logFilters, fetchLogs, filteredLogs, formatDate, getLogScoreColor,
                     selectedLogForWrongWords, openWrongWordsModal, closeWrongWordsModal,
                     realtimeMsgInput, sendRealtimeMsg, visitorCount,
-                    GRAMMAR_THEMES, grammarAssignments, toggleGrammarTask // 🌟 匯出文法任務變數
+                    GRAMMAR_THEMES, grammarAssignments, toggleGrammarTask
                 };
             }
         }).mount('#app');
