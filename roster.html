@@ -5,11 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>馬纓丹 ONLINE - 特工檔案室</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>tailwind.config={theme:{extend:{colors:{neon:{cyan:'#0ff',pink:'#f0f',yellow:'#ff0',green:'#0f0',red:'#ff003c',bg:'#050b14'}}}}}</script>
+    <script>tailwind.config={theme:{extend:{colors:{neon:{cyan:'#0ff',pink:'#f0f',yellow:'#ff0',green:'#0f0',red:'#ff003c',purple:'#b026ff',bg:'#050b14'}}}}}</script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
     <script src="config.js"></script>
+    <script src="grammar_data.js"></script>
+
     <style>
         body { background-color: #050b14; color: #e5e7eb; font-family: sans-serif; }
         .scanline { background: linear-gradient(to bottom, transparent 50%, rgba(0, 255, 255, 0.1) 51%); background-size: 100% 4px; animation: scan 10s linear infinite; pointer-events: none; }
@@ -50,15 +53,15 @@
                     <div class="text-3xl font-black text-white">{{ users.length }} <span class="text-sm text-gray-500">名</span></div>
                 </div>
                 <div class="bg-black/60 border border-gray-700 p-4 text-center">
-                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">題庫總單字量</div>
-                    <div class="text-3xl font-black text-neon-cyan">{{ totalWordsCount }} <span class="text-sm text-cyan-800">字</span></div>
+                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">全軍單字平均</div>
+                    <div class="text-3xl font-black text-neon-cyan">{{ averageMastery }}%</div>
                 </div>
                 <div class="bg-black/60 border border-gray-700 p-4 text-center">
-                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">全軍平均精熟度</div>
-                    <div class="text-3xl font-black text-neon-yellow">{{ averageMastery }}%</div>
+                    <div class="text-xs text-gray-500 font-bold tracking-widest mb-1">全軍文法平均</div>
+                    <div class="text-3xl font-black text-neon-purple">{{ averageGrammarMastery }}%</div>
                 </div>
                 <div class="bg-black/60 border border-gray-700 p-4 text-center flex flex-col justify-center">
-                    <button @click="refreshData" class="text-sm font-bold text-cyan-400 hover:text-white border border-cyan-800 hover:bg-cyan-900/50 py-2 transition tracking-widest">🔄 手動刷新檔案</button>
+                    <button @click="refreshData" class="text-sm font-bold text-cyan-400 hover:text-white border border-cyan-800 hover:bg-cyan-900/50 py-2 transition tracking-widest shadow-[0_0_10px_rgba(0,255,255,0.2)]">🔄 手動刷新檔案</button>
                 </div>
             </div>
 
@@ -67,14 +70,14 @@
                     <div v-if="isLoading" class="text-center py-20 text-cyan-500 font-bold animate-pulse tracking-widest">
                         📡 正在從神聖殿堂調取特工機密檔案...
                     </div>
-                    <table v-else class="w-full text-left border-collapse min-w-[800px]">
+                    <table v-else class="w-full text-left border-collapse min-w-[1000px]">
                         <thead class="bg-gray-800 border-b-2 border-cyan-800">
                             <tr class="text-gray-300 tracking-widest text-sm">
                                 <th class="p-4 font-bold">特工學號</th>
                                 <th class="p-4 font-bold">真實身分</th>
                                 <th class="p-4 font-bold">戰場暱稱</th>
-                                <th class="p-4 font-bold w-[35%]">🎯 總精熟度 (已熟記 / 總字數)</th>
-                                <th class="p-4 font-bold text-center">註冊時間</th>
+                                <th class="p-4 font-bold w-[25%]">🎯 單字精熟度</th>
+                                <th class="p-4 font-bold w-[25%]">⚡ 文法精熟度</th>
                                 <th class="p-4 font-bold text-center">管理</th>
                             </tr>
                         </thead>
@@ -96,7 +99,16 @@
                                     </div>
                                 </td>
 
-                                <td class="p-4 text-xs text-gray-500 text-center tracking-wider">{{ formatDate(user.createdAt) }}</td>
+                                <td class="p-4">
+                                    <div class="flex justify-between items-end mb-1">
+                                        <span class="text-xs font-bold" :class="getGrammarColorText(user.grammarProgress)">{{ user.grammarProgress }}%</span>
+                                    </div>
+                                    <div class="w-full bg-black h-2 border border-gray-700 relative overflow-hidden">
+                                        <div class="h-full transition-all duration-1000" 
+                                             :class="getGrammarColorBg(user.grammarProgress)"
+                                             :style="{ width: user.grammarProgress + '%' }"></div>
+                                    </div>
+                                </td>
                                 
                                 <td class="p-4 text-center">
                                     <button @click="viewDetails(user)" class="text-xs border border-gray-600 text-gray-400 hover:text-white hover:bg-gray-700 px-3 py-1 font-bold transition">
@@ -134,16 +146,14 @@
                 const isLoading = ref(true);
                 const searchQuery = ref('');
 
-                // 🌟 計算題庫總單字量
                 const totalWordsCount = computed(() => {
                     let count = 0;
                     if (typeof ALL_THEMES_DATA !== 'undefined') {
                         ALL_THEMES_DATA.forEach(t => count += t.words.length);
                     }
-                    return count > 0 ? count : 1; // 防呆避免除以0
+                    return count > 0 ? count : 1; 
                 });
 
-                // 🌟 計算全軍平均精熟度
                 const averageMastery = computed(() => {
                     if (users.value.length === 0) return 0;
                     let totalProgress = 0;
@@ -151,7 +161,84 @@
                     return (totalProgress / users.value.length).toFixed(1);
                 });
 
-                // 🌟 核心數據抓取
+                const averageGrammarMastery = computed(() => {
+                    if (users.value.length === 0) return 0;
+                    let totalGrammarProgress = 0;
+                    users.value.forEach(u => totalGrammarProgress += parseFloat(u.grammarProgress));
+                    return (totalGrammarProgress / users.value.length).toFixed(1);
+                });
+
+                // 🌟 終極防護版：文法精熟度均權計算引擎
+                const calculateGrammarProgress = (grammarMasteryData) => {
+                    if (!grammarMasteryData) return 0;
+                    
+                    // 雙重掃描，確保抓得到題庫變數
+                    let qDb = null;
+                    if (typeof window !== 'undefined' && window.GRAMMAR_QUESTIONS) {
+                        qDb = window.GRAMMAR_QUESTIONS;
+                    } else if (typeof GRAMMAR_QUESTIONS !== 'undefined') {
+                        qDb = GRAMMAR_QUESTIONS;
+                    }
+                    
+                    if (!qDb) return 0; // 找不到題庫直接回傳 0
+                    
+                    const grammarThemes = [
+                        { id: 'pronouns', prefix: 'pro', name: '代名詞' }, 
+                        { id: 'tenses', prefix: 'ten', name: '時態' }, 
+                        { id: 'special_verbs', prefix: 'sv', name: '特殊動詞' },
+                        { id: 'conjunctions', prefix: 'conj', name: '連接詞' }, 
+                        { id: 'adjectives', prefix: 'adj', name: '形容詞與副詞' }, 
+                        { id: 'prepositions', prefix: 'prep', name: '介係詞' },
+                        { id: 'interrogatives', prefix: 'wh', name: '疑問詞' }, 
+                        { id: 'verbals', prefix: 'v', name: '不定詞與動名詞' }, 
+                        { id: 'patterns', prefix: 'pat', name: '特殊句型' },
+                        { id: 'clauses', prefix: 'cl', name: '子句 (大魔王)' }
+                    ];
+
+                    let totalPercentage = 0;
+
+                    grammarThemes.forEach(theme => {
+                        let qs = [];
+                        
+                        // 1. 抓取直接掛在主題 ID 或 prefix 上的題目
+                        if (qDb[theme.id]) qs = qs.concat(qDb[theme.id]);
+                        if (qDb[theme.prefix] && theme.id !== theme.prefix) qs = qs.concat(qDb[theme.prefix]);
+                        
+                        // 2. 抓取掛在子分類 (prefix_ 或 id_) 上的題目
+                        Object.keys(qDb).forEach(key => {
+                            if (key.startsWith(theme.id + '_') || key.startsWith(theme.prefix + '_')) {
+                                qs = qs.concat(qDb[key]);
+                            }
+                        });
+                        
+                        // 3. 過濾重複題目，確保分母精確
+                        const uniqueQs = [];
+                        const seen = new Set();
+                        qs.forEach(q => {
+                            if (q && q.question && !seen.has(q.question)) {
+                                seen.add(q.question);
+                                uniqueQs.push(q);
+                            }
+                        });
+
+                        // 4. 計算該主題 10% 配額
+                        if (uniqueQs.length > 0) {
+                            let masteredCount = 0;
+                            uniqueQs.forEach(q => {
+                                try {
+                                    // 將題目轉換為安全的 base64 鑰匙
+                                    const safeKey = btoa(encodeURIComponent(q.question)).replace(/[=+\/]/g, '');
+                                    // 如果在資料庫中找得到，就代表這題已精熟
+                                    if (grammarMasteryData[safeKey]) masteredCount++;
+                                } catch(e) {}
+                            });
+                            totalPercentage += (masteredCount / uniqueQs.length) * 10;
+                        }
+                    });
+
+                    return parseFloat(totalPercentage.toFixed(1));
+                };
+
                 const fetchUsersData = () => {
                     if (!isAuthorized.value) return;
                     isLoading.value = true;
@@ -163,15 +250,15 @@
                                 let u = child.val();
                                 u.uid = child.key;
                                 
-                                // 計算該名學生的精熟單字數
+                                // 單字精熟度計算
                                 u.masteryCount = u.mastery ? Object.keys(u.mastery).length : 0;
-                                
-                                // 計算百分比
                                 u.progress = ((u.masteryCount / totalWordsCount.value) * 100).toFixed(1);
+                                
+                                // 文法精熟度計算 (傳入原始的 firebase 物件)
+                                u.grammarProgress = calculateGrammarProgress(u.grammarMastery || {});
                                 
                                 list.push(u);
                             });
-                            // 依照註冊時間新到舊排序
                             list.sort((a, b) => b.createdAt - a.createdAt);
                         }
                         users.value = list;
@@ -193,7 +280,6 @@
                     fetchUsersData();
                 };
 
-                // 🔍 搜尋過濾器
                 const filteredUsers = computed(() => {
                     if (!searchQuery.value.trim()) return users.value;
                     const q = searchQuery.value.trim().toLowerCase();
@@ -204,7 +290,7 @@
                     );
                 });
 
-                // 🎨 UI 顏色輔助函數
+                // 單字配色 (青綠系)
                 const getProgressColorText = (progress) => {
                     const p = parseFloat(progress);
                     if (p >= 80) return 'text-neon-green';
@@ -221,6 +307,23 @@
                     return 'bg-gray-800';
                 };
 
+                // 文法配色 (紫色系)
+                const getGrammarColorText = (progress) => {
+                    const p = parseFloat(progress);
+                    if (p >= 80) return 'text-neon-purple drop-shadow-[0_0_5px_#b026ff]';
+                    if (p >= 33) return 'text-purple-400';
+                    if (p > 0) return 'text-purple-300';
+                    return 'text-gray-500';
+                };
+
+                const getGrammarColorBg = (progress) => {
+                    const p = parseFloat(progress);
+                    if (p >= 80) return 'bg-neon-purple shadow-[0_0_10px_#b026ff]';
+                    if (p >= 33) return 'bg-purple-500 shadow-[0_0_10px_#8b5cf6]';
+                    if (p > 0) return 'bg-purple-400';
+                    return 'bg-gray-800';
+                };
+
                 const formatDate = (ts) => {
                     if (!ts) return '-';
                     const d = new Date(ts);
@@ -228,13 +331,13 @@
                 };
 
                 const viewDetails = (user) => {
-                    alert(`【系統提示】\n特工 ${user.realName} (${user.studentId})\n已精熟 ${user.masteryCount} 個單字。\n詳細裝備庫檢視功能開發中！`);
+                    alert(`【系統提示】\n特工 ${user.realName} (${user.studentId})\n單字精熟：${user.progress}%\n文法精熟：${user.grammarProgress}%\n詳細裝備庫檢視功能開發中！`);
                 };
 
                 return {
                     isAuthorized, users, isLoading, searchQuery, filteredUsers,
-                    totalWordsCount, averageMastery, refreshData,
-                    getProgressColorText, getProgressColorBg, formatDate, viewDetails
+                    totalWordsCount, averageMastery, averageGrammarMastery, refreshData,
+                    getProgressColorText, getProgressColorBg, getGrammarColorText, getGrammarColorBg, formatDate, viewDetails
                 };
             }
         }).mount('#app');
